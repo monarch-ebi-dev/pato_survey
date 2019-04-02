@@ -464,19 +464,23 @@ turtle<-function(df,name,dt) {
 ```
 
 ```{r}
-ttl_ax<-unique(da[corpus=="obo20190313",c("iri","o","axiomid")])
+ttl_ax<-unique(da[corpus=="obo20190313"&ftype=="merged",c("iri","o","axiomid")])
 ttl_ax$id<-paste(ttl_ax$o,ttl_ax$axiomid,sep = "-")
 ttl_ax_id = ttl_ax[,c("id","iri")]
 ct_ttl_iri<-count(ttl_ax_id[,c("iri")])
 
-ttl_ax_o<-unique(da[corpus=="obo20190313",c("iri","o")])
+ttl_ax_o<-unique(da[corpus=="obo20190313"&ftype=="merged",c("iri","o")])
 ct_ttl_ax_o<-count(ttl_ax_o[,c("iri")])
 
-ttl_exp<-unique(df_exp[corpus=="obo20190313",.(iri,expressionid,axiomid,o)])
+ttl_exp<-unique(df_exp[corpus=="obo20190313"&ftype=="merged",.(iri,expressionid,axiomid,o)])
 ttl_exp$id<-paste(ttl_exp$o,ttl_exp$axiomid,ttl_exp$expressionid,sep = "-")
 ttl_exp = ttl_exp[,c("id","iri")]
 ct_ttl_exp<-count(ttl_exp[,c("iri")])
 
+cumulative_branch<-unique(df_p[corpus=="obo20190313"&ftype=="merged"&!is.na(impact),.(iri,o,impact)])
+sum_cumulative_branch<-aggregate(cumulative_branch$impact,by=list(cumulative_branch$iri),FUN=sum)
+
+turtle(sum_cumulative_branch,"ct_branch_impact","xsd:int")
 turtle(ct_ttl_iri,"ct_uses_across_axioms","xsd:int")
 turtle(ct_ttl_ax_o,"ct_uses_across_ontologies","xsd:int")
 turtle(ct_ttl_exp,"ct_uses_across_expressions","xsd:int")

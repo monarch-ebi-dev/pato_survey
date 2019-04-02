@@ -74,7 +74,7 @@ df_pato<-df_label
 
 
 # Prepare property data
-df_p<-unique(df_classdata[,.(o,ftype,corpus,iri)])
+df_p<-unique(df_classdata[,.(o,ftype,corpus,iri,impact)])
 df_p<-merge(df_p,df_pato,by.x = "iri",by.y = "term",all.x = TRUE)
 df_p$corpussize=length(valid_ontologies)
 
