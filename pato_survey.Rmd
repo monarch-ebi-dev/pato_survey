@@ -473,6 +473,8 @@ ttl_ax_o<-unique(da[corpus=="obo20190313"&ftype=="merged",c("iri","o")])
 ct_ttl_ax_o<-count(ttl_ax_o[,c("iri")])
 
 ttl_exp<-unique(df_exp[corpus=="obo20190313"&ftype=="merged",.(iri,expressionid,axiomid,o)])
+ttl_exp$axid<-paste(ttl_exp$o,ttl_exp$axiomid,sep = "-")
+ttl_exp<-ttl_exp[axid %in% unique(ttl_ax$id),]
 ttl_exp$id<-paste(ttl_exp$o,ttl_exp$axiomid,ttl_exp$expressionid,sep = "-")
 ttl_exp = ttl_exp[,c("id","iri")]
 ct_ttl_exp<-count(ttl_exp[,c("iri")])
