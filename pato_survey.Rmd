@@ -1,0 +1,489 @@
+---
+title: "Survey of PATO - the Phenotype And Trait Ontology"
+author: "Nicolas Matentzoglu"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+    html_document: default 
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r, echo=FALSE}
+library(data.table)
+library(stringr)
+library(plyr)
+library(ggplot2)
+library(DT)
+library(knitr)
+```
+
+
+```{r settings, echo=FALSE}
+ws = "pato_survey_obo.RData"
+
+fontsize=2
+
+rbox_types<-c("SubPropertyChainOf", "SubObjectPropertyOf", "ObjectPropertyDomain","EquivalentObjectProperties","ObjectPropertyRange", "InverseObjectProperties", "TransitiveObjectProperty", "ReflexiveObjectProperty", "AsymmetricObjectProperty", "IrrefexiveObjectProperty", "InverseFunctionalObjectProperty", "FunctionalObjectProperty", "SymmetricObjectProperty", "DisjointObjectProperties","DisjointDataProperties","SubDataPropertyOf","EquivalentDataProperties","ObjectPropertyDomain","DataPropertyDomain","ObjectPropertyRange","DataPropertyRange","FunctionalDataProperty","DatatypeDefinition","HasKey")
+
+rule_types<-c("Rule")
+
+abox_types<-c("ClassAssertion", "ObjectPropertyAssertion","SameIndividual","DifferentIndividuals","NegativeObjectPropertyAssertion","DataPropertyAssertion","NegativeDataPropertyAssertion")
+
+tbox_types<-c("SubClassOf", "EquivalentClasses","DisjointClasses","DisjointUnion")
+
+characteristics_axiom_types<-c("TransitiveObjectProperty", "ReflexiveObjectProperty", "AsymmetricObjectProperty", "IrrefexiveObjectProperty", "InverseFunctionalObjectProperty", "FunctionalObjectProperty", "SymmetricObjectProperty")
+
+options(scipen = 1000)
+opts_chunk$set(fig.width=8, fig.height=5, echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+```{r functions, echo=FALSE}
+pc<-function(x,y,digits=2) {
+  return(round(100*(x/y),digits))
+}
+
+theme_survey<-function(p) {
+  cls<-c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+  p + theme_bw()+theme(axis.text.x = element_text(size=12),axis.text.y = element_text(size=12),axis.title = element_text(size=12)) + scale_fill_brewer(palette = "Paired") + scale_colour_brewer(palette = "Paired")
+ # +  scale_color_manual(values=cls) +   scale_fill_manual(values=cls)
+}
+
+kt<-function(x) {
+  return(kable(x,row.names = FALSE,digits = c(2)))
+}
+```
+
+```{r load, echo=FALSE, cache=TRUE}
+load(ws)
+o_labels<-unique(df_p[,c("iri","label")])
+```
+
+```{r pre_obocorpus, echo=FALSE}
+d_obo<-ct_download_sucess[,]
+#df_corpus$merged_success<-TRUE
+#hwarning("REMOVE THIS")
+all<-(df_corpus$o)
+notdownloaded<-(df_corpus[!df_corpus$download_success,]$o)
+downloadnotmerged<-(df_corpus[df_corpus$download_success&!df_corpus$merged_success,]$o)
+mergednotcollected<-(df_corpus[df_corpus$merged_success&!df_corpus$collectdata_success,]$o)
+collectedbutexcluded<-(df_corpus[df_corpus$collectdata_success&df_corpus$excluded,]$o)
+ct_ont_all<-length(all)
+ct_ont_download_fail<-length(notdownloaded)
+ct_ont_merge_fail<-length(downloadnotmerged)
+ct_ont_collect_fail<-length(mergednotcollected)
+ct_ont_excluded<-length(collectedbutexcluded)
+
+st_ont_all<-paste(all,collapse=" ")
+st_ont_download_fail<-paste(notdownloaded,collapse=" ")
+st_ont_merge_fail<-paste(downloadnotmerged,collapse=" ")
+st_ont_collect_fail<-paste(mergednotcollected,collapse=" ")
+st_ont_excluded<-paste(collectedbutexcluded,collapse=" ")
+
+ct_corp_obo<-ct_ont_all-ct_ont_download_fail-ct_ont_merge_fail-ct_ont_collect_fail-ct_ont_excluded
+```
+
+# The OBO Corpus
+In the following we will describe the OBO corpus in general. The OBO corpus contains `r ct_ont_all` ontologies, 
+
+* `r ct_ont_download_fail` of which failed to download: `r st_ont_download_fail`, 
+* `r ct_ont_merge_fail` of which failed to be parsed by ROBOT (or were empty): `r st_ont_merge_fail`
+* `r ct_ont_collect_fail` of which failed to be processed by the data collection pipeline (timeout 60min): `r st_ont_collect_fail`
+* `r ct_ont_excluded` of which failed were manually excluded: `r st_ont_excluded` 
+
+resulting in a total of `r ct_corp_obo` valid ontologies for the following analysis. Full breakdown:
+
+```{r processingbd, echo=FALSE}
+kt(d_obo)
+```
+  
+```{r prepro_obo, echo=FALSE}
+# Analysis of OBO snapshot
+# IN df_ax, df_p
+df_ax$ax_cat<-ifelse((df_ax$axiomtype %in% tbox_types),"tbox",ifelse((df_ax$axiomtype %in% abox_types),"abox",ifelse((df_ax$axiomtype %in% rule_types),"rules",ifelse((df_ax$axiomtype %in% rbox_types),"rbox","other"))))
+# If a Tbox axiom contains only PATO classes we assume it is a PATO axiom that got merged in and drop it.
+df_ax$pato_axiom<-ifelse(df_ax$pato_only&df_ax$ax_cat=="tbox",TRUE,FALSE)
+df_ax<-df_ax[!df_ax$pato_axiom,]
+df_ax$corpussize <- ct_corp_obo
+df_p$corpussize <- ct_corp_obo
+
+# PATO axiom data (raw)
+da<-df_ax
+da$all="all"
+dm<-df_ax[df_ax$ftype=="merged",]
+dni<-df_ax[df_ax$ftype=="noimports",]
+
+dsig_m<-df_p[df_p$ftype=="merged",c("iri","o")]
+dsig_ni<-df_p[df_p$ftype=="noimports",c("iri","o")]
+
+ct_allaxiomdata$ax_cat<-ifelse((ct_allaxiomdata$axiomtype %in% tbox_types),"tbox",ifelse((ct_allaxiomdata$axiomtype %in% abox_types),"abox",ifelse((ct_allaxiomdata$axiomtype %in% rule_types),"rules",ifelse((ct_allaxiomdata$axiomtype %in% rbox_types),"rbox","other_cat"))))
+
+# All axiom data (counted)
+daa<-ct_allaxiomdata
+daa$all="all"
+
+ct_unique_o_using_rel<-length(unique(dm$o))
+ct_unique_o_using_rel_ni<-length(unique(dni$o))
+# OUT dm, dni, dm, dni, corpus, dsig_m, dsig_ni, ct_unique_o_using_rel, ct_unique_o_using_rel_ni, 
+```
+
+# How important is the PATO for OBO foundry ontologies? 
+We say that an axiom ax is *PATO-dependent* if the axiom contains one or more PATO-classes. An ontology is PATO-dependent if it contains at least one PATO-dependent axiom. We say that an axiom is *p-dependent* if it contains a particular PATO class p. In the following, we will quantify the importance of PATO for OBO ontologies by (1) counting the number of PATO-dependent ontologies and (2) determining the prevalence of PATO-dependent axioms. If a TBox axiom ("SubClassOf", "EquivalentClasses","DisjointClasses","DisjointUnion") contains a set of classes [C1,C2..,Cn], all of which are PATO classes (i.e. having a PATO iri), we *make the assumption that this is a PATO axiom*. Those PATO axioms are *removed from the axiom analysis* (but not from the ontology level analysis; if the PATO class is mentioned, it is counted as mentioned). This mitigates overcounting PATO-dependent axioms that are imported from PATO and then phyiscally merged into the release artefact (which happens relatively often). 
+
+```{r breakdown_o, echo=FALSE, include=FALSE}
+# OBO ontologies and PATO class usage. Ignored now in favour of axiom-based counting
+#IN: dsig_m, dsig_ni
+dsig_m_unique<-unique(dsig_m[,c("iri","o")])
+dsig_ni_unique<-unique(dsig_ni[,c("iri","o")])
+dsig_m_o_ct<-count(dsig_m_unique[,c("o")])
+names(dsig_m_o_ct)<-c("o","ct_sig_m")
+dsig_ni_o_ct<-count(dsig_ni_unique[,c("o")])
+names(dsig_ni_o_ct)<-c("o","ct_sig_ni")
+df_o<-merge(dsig_ni_o_ct,dsig_m_o_ct,by="o",all=TRUE)
+df_o[is.na(df_o)] <- 0
+#write.csv(file = "pato_survey_onts.csv",df_o)
+names(df_o)<-c("Ontology","PATO classes (no imports)","PATO classes (merged imports)")
+kt(df_o)
+dsig_m_unique<-dsig_ni_unique<-dsig_m_o_ct<-dsig_ni_o_ct<-NULL
+# OUT: df_o
+```
+
+## Analysis of PATO-dependent ontologies
+
+```{r rodeo, echo=FALSE}
+df_rodeo<-unique(da[,.(o,ax_cat,ftype)])
+ct_rodeo_axcat<-count(df_rodeo[,.(ax_cat,ftype)])
+names(ct_rodeo_axcat)<-c("category","ftype","freq")
+
+df_rodeo3<-unique(da[,.(o,all,ftype)])
+ct_rodeo_all<-count(df_rodeo3[,.(all,ftype)])
+names(ct_rodeo_all)<-c("category","ftype","freq")
+
+x<-merge(ct_rodeo_axcat,ct_rodeo_all,by=c("category","ftype","freq"),all=TRUE)
+x$pc<-pc(x$freq,ct_corp_obo,1)
+d_rodeo<-x
+```
+
+```{r rodeo_p, echo=FALSE}
+p<-ggplot(d_rodeo,aes(x=reorder(category,freq),y=pc,fill=ftype,group=ftype)) + geom_bar(stat="identity",position="dodge") + geom_text(aes(label=paste("",freq," (",pc,"%)",sep="")), hjust=-0.1,vjust=0.5, color="black",position = position_dodge(width = 1),size=3.5) + scale_x_discrete(limits = c("abox","rules","tbox","rbox","all")) + xlab("") + ylab("% of OBO ontologies") + guides(fill=guide_legend(title="Imports")) + coord_flip()
+theme_survey(p) + theme(legend.position = c(0.8, 0.2)) + ylim(0,100)
+ggsave("patosurvey_rodeo.jpg",width = 4.5,height = 3.5)
+```
+
+## Analysis of PATO-dependent axioms
+
+```{r aggregate_all_axioms, echo=FALSE}
+
+ct_allaxiomdata_axcat<-aggregate(daa$freq,by=list(daa$ftype,daa$corpus,daa$ax_cat),FUN=sum)
+names(ct_allaxiomdata_axcat)<-c("ftype","corpus","category","freq")
+
+ct_allaxiomdata_all<-aggregate(daa$freq,by=list(daa$ftype,daa$corpus,daa$all),FUN=sum)
+names(ct_allaxiomdata_all)<-c("ftype","corpus","category","freq")
+
+
+x<-merge(ct_allaxiomdata_all,ct_allaxiomdata_axcat,by=c("category","ftype","freq","corpus"),all=TRUE)
+x$corpus<-NULL
+names(x)<-c("category","ftype","ax_ct")
+d_roallax<-x
+```
+
+```{r aggregate_ro_axioms, echo=FALSE}
+df_rodeo<-unique(da[,.(o,ax_cat,axiomid,ftype)])
+ct_rodeo_axcat<-count(df_rodeo[,.(ax_cat,ftype)])
+names(ct_rodeo_axcat)<-c("category","ftype","freq")
+
+df_rodeo3<-unique(da[,.(o,all,axiomid,ftype)])
+ct_rodeo_all<-count(df_rodeo3[,.(all,ftype)])
+names(ct_rodeo_all)<-c("category","ftype","freq") 
+
+x<-merge(ct_rodeo_axcat,ct_rodeo_all,by=c("category","ftype","freq"),all=TRUE)
+
+x<-merge(x,d_roallax,by=c("category","ftype"))
+x$pc<-pc(x$freq,x$ax_ct,1)
+d_roax<-x
+
+```
+
+```{r roaxplot, echo=FALSE}
+p<-ggplot(d_roax,aes(x=reorder(category,freq),y=pc,fill=ftype,group=ftype)) + geom_bar(stat="identity",position="dodge") + geom_text(aes(label=paste("",freq,sep="")), hjust=-0.1,vjust=0.5, color="black",position = position_dodge(width = 1),size=3.5) + scale_x_discrete(limits = c("abox","rules","tbox","rbox","all")) + xlab("") + ylab("% of axioms across OBO-foundry") + guides(fill=guide_legend(title="Imports")) + coord_flip()
+theme_survey(p) + theme(legend.position = c(0.85, 0.8)) + ylim(0,35)
+ggsave("rosurvey_axiomcat.jpg",width = 4.5,height = 3.5)
+```
+
+# How important are the individual PATO classes?
+
+```{r prep_plots, echo=FALSE}
+#IN: dm, dni
+dm$corpussize<-ct_corp_obo
+dni$corpussize<-ct_corp_obo
+dgg<-unique(dm[,c("iri","label","o","corpussize")])
+cdgg<-count(dgg[,c("iri","label","corpussize")])
+cdgg$pc<-round(pc(cdgg$freq,cdgg$corpussize),0)
+cdgg$type<-"merged"
+cdgg$corpussize<-NULL
+
+dgg_ni<-unique(dni[,c("iri","label","o","corpussize")])
+cdgg_ni<-count(dgg_ni[,c("iri","label","corpussize")])
+cdgg_ni$pc<-round(pc(cdgg_ni$freq,cdgg_ni$corpussize),0)
+if(nrow(cdgg_ni)>=1) {
+  cdgg_ni$type<-"removed"
+}
+cdgg_ni$corpussize<-NULL
+
+x<-rbind(cdgg,cdgg_ni)
+dgg<-dgg_ni<-cdgg_ni<-cdgg<-NULL
+
+x<-reshape(x, idvar = c("iri","label"), timevar = "type", direction = "wide")
+x$top20<-ifelse(x$freq.merged>15,TRUE,FALSE)
+x<-melt(id.vars=c("iri","label","top20"),x)
+x$measure<-gsub(".merged","",gsub(".removed","",x$variable))
+x$ftype<-gsub("freq.","",gsub("pc.","",x$variable))
+x$variable<-NULL
+x<-reshape(x, idvar = c("iri","label","ftype","top20"), timevar = "measure", direction = "wide")
+names(x)<-gsub("value.","",names(x))
+x$freq<-ifelse(is.na(x$freq),0,x$freq)
+x$pc<-ifelse(is.na(x$pc),0,x$pc)
+x<-x[complete.cases(x), ]
+#OUT: x (to be removed after plotting)
+```
+
+
+## Distribution of usage (nr of ontologies) for all PATO classes 
+
+```{r}
+ggplot(x,aes(x=reorder(label,freq),y=freq,fill=ftype))+geom_bar(stat="identity",position = "dodge")+
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  xlab("PATO classes") + ylab("Number of ontologies used in") 
+#ggsave("obo_all_mni.png", width = 15, height = 7, units = "cm")
+```
+
+## PATO classes used in more than 15 ontologies
+
+```{r}
+p<-ggplot(x[x$top20,],aes(x=reorder(label,freq),y=freq,fill=ftype))+geom_bar(stat="identity",position = "dodge")+ geom_text(aes(label=paste("",pc," %",sep="")), hjust=1, color="black",position = position_dodge(width = 1)) +xlab("PATO class") + ylab("Number of ontologies used in") + coord_flip() 
+theme_survey(p)
+#ggsave("obo_20_plus_mni.png", width = 12, height = 12, units = "cm")
+```
+
+## Full breakdown of all PATO classes with use in ontologies (merged imports)
+```{r, echo=FALSE}
+xl<-x[x$ftype=="merged",]
+xl$top20<-NULL
+xl$ftype<-NULL
+xl<-xl[order(-xl$freq),]
+names(xl)<-c("PATO class","Label","Nr. ontologies","% ontologies")
+kt(xl)
+```
+
+## Full Breadown of usage of PATO classes
+in_sig_m:	Number of ontologies where PATO class appears in signature, imports merged
+
+in_sig_ni:	Number of ontologies where PATO class appears in signature, imports removed
+
+tboxabox_merged	Number of ontologies where PATO class appears in TBox or Abox axiom (not RBox), imports merged
+
+tboxabox_noimports	Number of ontologies where PATO class appears in TBox or Abox axiom (not RBox), imports removed
+
+all other:	Number of ontologies using the PATO class as part of a particular axiom type, imports MERGED
+
+The table is large. Note that you can scroll horizontally!
+
+```{r, echo=FALSE}
+# P occurs in signature (merged)
+d_sig_ct<-count(dsig_m[,c("iri")])
+names(d_sig_ct)<-c("iri","in_sig_m")
+
+# P occurs in signature (no imports)
+d_sig_ni_ct<-count(dsig_ni[,c("iri")])
+names(d_sig_ni_ct)<-c("iri","in_sig_ni")
+
+# P usage TBOX ABOX (imports merged)
+ro_cts_m<-unique(dm[,c("iri","o")])
+ro_cts_m<-count(ro_cts_m[,c("iri")])
+names(ro_cts_m)<-c("iri","tboxabox_merged")
+
+# P usage TBOX ABOX (imports removed)
+ro_cts_ni<-unique(dni[,c("iri","o")])
+ro_cts_ni<-count(ro_cts_ni[,c("iri")])
+names(ro_cts_ni)<-c("iri","tboxabox_noimports")
+
+# P usage broken down by axiom type (imports merged)
+ro_ctaxs<-unique(dm[,c("iri","o","axiomtype")])
+ro_ctaxs<-count(ro_ctaxs[,c("iri","axiomtype")])
+ro_ctaxs<-reshape(ro_ctaxs, idvar = "iri", timevar = "axiomtype", direction = "wide")
+names(ro_ctaxs)<-gsub("freq.","",names(ro_ctaxs))
+
+ro_all<-merge(o_labels,ro_cts_m,by="iri",all=TRUE)
+ro_all<-merge(ro_all,ro_cts_ni,by="iri",all=TRUE)
+ro_all<-merge(ro_all,d_sig_ct,by="iri",all=TRUE)
+ro_all<-merge(ro_all,d_sig_ni_ct,by="iri",all=TRUE)
+ro_all<-merge(ro_all,ro_ctaxs,by="iri",all=TRUE)
+ro_all[is.na(ro_all)] <- 0
+
+ro_all<-ro_all[order(-ro_all$tboxabox_merged),]
+kt(ro_all)
+#write.csv(ro_all,file="ro.csv")
+
+```
+
+```{r cleanobo, echo=FALSE}
+#x<-dm<-dni<-dm<-dni<-corpus<-dsig_m<-dsig_ni<-ct_unique_o_using_rel<-ct_unique_rel_tbox_abox<-ct_unique_o_using_rel_ni<-ct_unique_rel_tbox_abox_ni<-NULL
+```
+
+
+```{r prepromain, echo=FALSE}
+# IN: df_ax
+ct_axt<-count(df_ax[,.(ftype,corpus,iri,axiomtype,label)])
+ct_axt<-ct_axt[order(-ct_axt$freq),]
+
+df_axo<-unique(df_ax[,.(o,ftype,corpus,axiomtype,iri)])
+ct_axto<-count(df_axo[,.(ftype,corpus,iri,axiomtype)])
+ct_axto<-merge(ct_axto,df_pato,by.x = "iri",by.y = "term",all.x = TRUE)
+ct_axto<-ct_axto[order(-ct_axto$freq),]
+
+ct_p<-count(df_p[,.(ftype,corpus,iri,label,corpussize)])
+ct_p$pc<-pc(ct_p$freq,ct_p$corpussize)
+#ct_p<-merge(ct_p,df_ro,by.x = "iri",by.y = "entity",all = TRUE) //every relation is used at least once, else this would be necessary.
+ct_p<-ct_p[order(-ct_p$freq),]
+
+ct_o<-count(df_p[,.(ftype,corpus,o)])
+ct_o<-ct_o[order(-ct_o$freq),]
+
+df_po<-unique(df_p[,.(ftype,corpus,corpussize,o)])
+ct_ro<-count(df_po[,.(ftype,corpus,corpussize)])
+ct_ro$pc<-pc(ct_ro$freq,ct_ro$corpussize)
+
+ct_ax<-count(df_ax[,.(ftype,corpus,iri,label)])
+names(ct_ax)<-c("ftype","corpus","iri","label","axioms")
+
+ct_p<-merge(ct_p,ct_ax,by=c("ftype","corpus","iri","label"),all = TRUE)
+
+```
+
+# Other metrics (just dumped here)
+
+## How many ontologies use PATO?
+
+This usage is based on whether an ontology contained a  PATO class in its signature. This includes any axiom types (such as property characteristics), including declarations!
+```{r, echo=FALSE}
+x<- ct_ro
+names(x)<-c("Imports","Corpus","Corpus size","Ontologies using PATO","% Ontologies using PATO")
+kt(x)
+```
+
+
+## How many different PATO classes does this ontology use?
+
+Compared to the previous plot (very similar), this plot takes into account all axiom types, not just TBOX and ABOX!
+
+```{r, echo=FALSE}
+dgg<-df_ax
+dgg<-merge(dgg,unique(df_p[,c("ftype","corpus")]),by=c("ftype","corpus"),all.x = TRUE)
+dgg<-unique(dgg[,c("label","o","corpussize")])
+cdgg<-count(dgg[,c("label","corpussize")])
+cdgg$pc<-pc(cdgg$freq,cdgg$corpussize)
+#cdgg<-cdgg[cdgg$freq>=input$rel_ct_offset[1]&cdgg$freq<=input$rel_ct_offset[2],]
+ggplot(cdgg[cdgg$freq>15,],aes(x=reorder(label,freq),y=freq))+geom_bar(stat="identity")+ geom_text(aes(label=paste(freq," (",pc," %)",sep="")), hjust=1.1, color="white") +xlab("PATO class") + ylab("Number of ontologies used in") + coord_flip() + ggtitle("Top relations (used by more than 20 ontologies)")
+
+
+asis_output("### The following table shows the number of distinct PATO classes used across the selected axiom types")
+
+asis_output("For example, the HP ontology might be using 45")
+
+dgg<-unique(df_ax[,c("label","o")])
+cdgg<-count(dgg[,c("o")])
+#cdgg<-cdgg[cdgg$freq>=input$rel_ct_offset[1]&cdgg$freq<=input$rel_ct_offset[2],]
+cdgg<-cdgg[order(-cdgg$freq),]
+names(cdgg)<-c("Ontology","Number of PATO classes used")
+kt(cdgg)
+
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+## What kind of axiomtype is the PATO classes used in? In how many axioms of that type is it used?
+#IN: ct_axt (needs to be reactive!)
+x<- ct_axt[,c("iri","label","axiomtype","freq")]
+names(x)<-c("PATO classes","Label","Axiomtype","Number of axioms")
+kt(x)
+```
+
+```{r, echo=FALSE, include=FALSE}
+## What kind of axiomtype is the PATO class used in? In how many ontologies?
+x<-ct_axto[,c("iri","axiomtype","freq")]
+names(x)<-c("PATO class","Axiomtype","Nr. of ontologies")
+kt(x)
+
+```
+
+```{r, echo=FALSE}
+asis_output("What kind of class expressions are PATO classes used in? In how many axioms of that type is it used?")
+x<-unique(df_exp[,.(ftype,corpus,iri,expressiontype,axiomid,o)])
+x<-count(x[,.(ftype,corpus,iri,expressiontype)])
+
+x<-x[,c("iri","expressiontype","freq")]
+x<-merge(x,o_labels,by=c("iri"),all.x=TRUE)
+x<-x[order(-x$freq),]
+names(x)<-c("PATO class","Expression type","Nr. axioms","Label")
+kt(x[,c("PATO class","Label","Expression type","Nr. axioms")])
+
+asis_output("What kind of class expressions is the PATO classes used in? In how many ontologies?")
+x<-df_expo[,]
+x<-count(x[,.(ftype,corpus,iri,expressiontype)])
+x<-x[,c("iri","expressiontype","freq")]
+x<-merge(x,o_labels,by=c("iri"),all.x=TRUE)
+x<-x[order(-x$freq),]
+names(x)<-c("PATO class","Expression type","Nr. ontologies","Label")
+#kt(x[,c("PATO class","Label","Expression type","Nr. ontologies")])
+
+```
+
+
+```{r, echo=FALSE, include=FALSE}
+# Full breakdown of  PATO classes used across ontologies
+# A class is 'used' by the ontology if it appears in its signature.
+x<-unique(df_ax[,c("iri","label","o","axiomid")])
+x<-count(x[,c("iri","label","o")])
+names(x)<-c("PATO class", "Label","Ontology","Number of axioms")
+#kt(x)
+```
+
+```{r}
+turtle<-function(df,name) {
+  #  "suahdius" .
+
+  write.csv(df,paste(name,".csv",sep=""),row.names = FALSE)
+  fileConn<-file(paste(name,".ttl",sep=""))
+  writeLines(paste("<",df$iri,"> <http://www.purl.obolibrary.org/obo/DEV_",name,"> \"",df$freq,"\"^^xsd:int . ",sep=""), fileConn)
+  close(fileConn)
+}
+```
+
+```{r}
+ttl_ax<-unique(da[corpus=="obo20190313",c("iri","o","axiomid")])
+ttl_ax$id<-paste(ttl_ax$o,ttl_ax$axiomid,sep = "-")
+ttl_ax_id = ttl_ax[,c("id","iri")]
+ct_ttl_iri<-count(ttl_ax_id[,c("iri")])
+
+ttl_ax_o<-unique(da[corpus=="obo20190313",c("iri","o")])
+ct_ttl_ax_o<-count(ttl_ax_o[,c("iri")])
+
+ttl_exp<-unique(df_exp[corpus=="obo20190313",.(iri,expressionid,axiomid,o)])
+ttl_exp$id<-paste(ttl_exp$o,ttl_exp$axiomid,ttl_exp$expressionid,sep = "-")
+ttl_exp = ttl_exp[,c("id","iri")]
+ct_ttl_exp<-count(ttl_exp[,c("iri")])
+
+
+turtle(ct_ttl_iri,"ct_uses_across_axioms")
+turtle(ct_ttl_ax_o,"ct_uses_across_ontologies")
+turtle(ct_ttl_exp,"ct_uses_across_expressions")
+```
+
+# Additional information
+```{r, echo=FALSE}
+asis_output("https://monarchinitiative.org/")
+```
