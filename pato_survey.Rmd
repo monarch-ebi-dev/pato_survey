@@ -453,12 +453,12 @@ names(x)<-c("PATO class", "Label","Ontology","Number of axioms")
 ```
 
 ```{r}
-turtle<-function(df,name) {
+turtle<-function(df,name,dt) {
   #  "suahdius" .
-
+  names(df)<-c("iri","val")
   write.csv(df,paste(name,".csv",sep=""),row.names = FALSE)
   fileConn<-file(paste(name,".ttl",sep=""))
-  writeLines(paste("<",df$iri,"> <http://www.purl.obolibrary.org/obo/DEV_",name,"> \"",df$freq,"\"^^xsd:int . ",sep=""), fileConn)
+  writeLines(paste("<",df$iri,"> <http://www.purl.obolibrary.org/obo/DEV_",name,"> \"",df$val,"\"^^",dt, ". ",sep=""), fileConn)
   close(fileConn)
 }
 ```
@@ -477,10 +477,10 @@ ttl_exp$id<-paste(ttl_exp$o,ttl_exp$axiomid,ttl_exp$expressionid,sep = "-")
 ttl_exp = ttl_exp[,c("id","iri")]
 ct_ttl_exp<-count(ttl_exp[,c("iri")])
 
-
-turtle(ct_ttl_iri,"ct_uses_across_axioms")
-turtle(ct_ttl_ax_o,"ct_uses_across_ontologies")
-turtle(ct_ttl_exp,"ct_uses_across_expressions")
+turtle(ct_ttl_iri,"ct_uses_across_axioms","xsd:int")
+turtle(ct_ttl_ax_o,"ct_uses_across_ontologies","xsd:int")
+turtle(ct_ttl_exp,"ct_uses_across_expressions","xsd:int")
+turtle(ttl_ax_o,"used_in_ontology","xsd:string")
 ```
 
 # Additional information
